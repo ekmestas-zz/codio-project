@@ -1,0 +1,29 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width" />
+  <title>Basket Game</title>
+  <link rel="stylesheet" href="BasketGame.css" />
+  <script src="BasketGame.js"></script>
+  <script src="Box2D_v2.2.1_min.js"></script>
+</head>
+<body onload="pageLoaded();">
+  <!-- Buttons -->
+  <img id="+_img" src="+.png" hidden />
+  <img id="+Pressed_img" src="+Pressed.png" hidden />
+  <img id="Arrow+_img" src="Arrow+.png" hidden />
+  <img id="Arrow+Pressed_img" src="Arrow+Pressed.png" hidden />
+  <img id="Play_img" src="Play.png" hidden />
+  <img id="PlayPressed_img" src="PlayPressed.png" hidden />
+  <!-- Game sprites -->
+  <img id="Ball_img" src="Ball.png" hidden />
+  <img id="Basket_img" src="Basket.png" hidden />
+  
+  <canvas></canvas>
+  
+  <label id="instructions">
+  Instructions: The first button adds a Bezier curve in 2 clicks, the second button displays the Bezier curve's control points so that they can be modified by clicking and dragging them, and the third button drops the ball on the click location (clicking more than once increases speed).  Use the curve to score the ball in the basket!
+  </label>
+</body>
+</html>

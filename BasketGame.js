@@ -1,4 +1,20 @@
 //
+// Box2D declarations
+//
+
+var b2Transform = Box2D.Common.Math.b2Transform
+  , b2Vec2 = Box2D.Common.Math.b2Vec2
+  , b2BodyDef = Box2D.Dynamics.b2BodyDef
+  , b2Body = Box2D.Dynamics.b2Body
+  , b2ContactListener = Box2D.Dynamics.b2ContactListener
+  , b2FixtureDef = Box2D.Dynamics.b2FixtureDef
+  , b2Fixture = Box2D.Dynamics.b2Fixture
+  , b2World = Box2D.Dynamics.b2World
+  , b2CircleShape = Box2D.Collision.Shapes.b2CircleShape
+  , b2PolygonShape = Box2D.Collision.Shapes.b2PolygonShape
+  , b2DebugDraw = Box2D.Dynamics.b2DebugDraw;
+
+//
 // Constants
 //
 
@@ -19,11 +35,16 @@ var ICON_ID_ARROW_PLUS = 'Arrow+';
 var ICON_ID_PLAY = 'Play'; 
 var ICON_ID_BALL = 'Ball';
 var ICON_ID_BASKET = 'Basket';
+var FONT_SIZE = '24';
+
+var SCORE_INCREMENT = 100;
 
 var BALL_RADIUS = ICON_SIZE / 2;
-var BALL_DROP_SPEED = -1;
 
-var NUM_CURVE_POINTS = 50;
+var NUM_CURVE_POINTS = 30;
+
+var CATEGORY_PHYSICS_ENTITIES = 0x0001;
+var CATEGORY_LOGIC_ENTITIES = 0x0002;
 
 //
 // Variables
@@ -44,10 +65,21 @@ var control2X = 0;
 var control2Y = 0;
 var curvePoints = [];
 
-var world = null;
-var ball = null;
 var basketX = 0;
 var basketY = 0;
+
+var score = 0;
+var highScore = 0;
+var playerScored = false;
+var playerHighScored = false;
+
+var world = null;
+var ground = null;
+var ball = null;
+var curve = null;
+var basket = null;
+var basketSensor = null;
+var animating = false;
 
 var canvas = null;
 var context = null;
@@ -78,8 +110,8 @@ function getCurvePoints(points, x1, y1, x2, y2, x3, y3, x4, y4)
     var ay = y3 - y1 - cy - by;
     var y = t3 * ay + t2 * by + t * cy + y1;
     
-    points[i].set_x(x);
-    points[i].set_y(-y);
+    points[i].x = x;
+    points[i].y = -y;
   }
 }
 
@@ -87,7 +119,7 @@ function drawCurvePoints(ctx, points)
 {
   for (var i = 0; i < points.length; ++i)
   {
-    fillCircle(ctx, points[i].get_x(), -points[i].get_y(), 1);
+    fillCircle(ctx, points[i].x, -points[i].y, 3);
   }
 }
 
@@ -154,30 +186,20 @@ function drawVerticalDashedLine(ctx, x, y1, y2, numDashes)
   }
 }
 
-function drawRect(ctx, x, y, w, h)
+function drawRect(ctx, x, y, w, h, color)
 {
   ctx.save();
   ctx.beginPath();
-  ctx.strokeStyle = 'black';
+  ctx.strokeStyle = color;
   ctx.rect(x, y, w, h);
   ctx.stroke();
-  ctx.restore();
-}
-
-function fillRect(ctx, x, y, w, h, color)
-{
-  ctx.save();
-  ctx.beginPath();
-  ctx.fillStyle = color;
-  ctx.rect(x, y, w, h);
-  ctx.fill();
   ctx.restore();
 }
 
 function getTextSize(ctx, text)
 {
   ctx.save();
-  ctx.font = '32px sans-serif';
+  ctx.font = FONT_SIZE + 'px sans-serif';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
   var textSize = ctx.measureText(text);
@@ -186,13 +208,13 @@ function getTextSize(ctx, text)
   return textSize;
 }
 
-function fillText(ctx, text, x, y)
+function fillText(ctx, text, x, y, color)
 {
   ctx.save();
-  ctx.font = '32px sans-serif';
+  ctx.font = FONT_SIZE + 'px sans-serif';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
-  ctx.fillStyle = 'black';
+  ctx.fillStyle = color;
   ctx.fillText(text, x, y + 8);
   ctx.restore();
 }
@@ -255,7 +277,7 @@ function drawBall()
   var positionVec = ball.GetPosition();
   var image = document.getElementById(ICON_ID_BALL + '_img');
   
-  drawImage(context, image, positionVec.get_x() - BALL_RADIUS, -positionVec.get_y() - BALL_RADIUS, -ball.GetAngle());
+  drawImage(context, image, positionVec.x - BALL_RADIUS, -positionVec.y - BALL_RADIUS, -ball.GetAngle());
 }
 
 function drawBasketArea()
@@ -279,17 +301,38 @@ function draw()
   {
     case INPUT_MODE_CONTROL:
     {
-      drawControl(true, point1X, point1Y, control1X, control1Y, selectedControl == CONTROL_ID_1);
-      drawControl(true, point2X, point2Y, control2X, control2Y, selectedControl == CONTROL_ID_2);
+      if (!isPointInToolbar(control2X, control2Y))
+      {
+        drawControl(true, point1X, point1Y, control1X, control1Y, selectedControl == CONTROL_ID_1);
+        drawControl(true, point2X, point2Y, control2X, control2Y, selectedControl == CONTROL_ID_2);
+      }
       break;
     }
     case INPUT_MODE_PLAY:
     {
-      drawBall();
+      if (ball && !isPointInToolbar(ball.GetPosition().x, -ball.GetPosition().y))
+      {
+        drawBall();
+      }
     }
   }
   
   drawBasketArea();
+  
+  fillText(context, 'Score: ' + score, 20, canvas.height - 40, 'black');
+  fillText(context, 'High Score: ' + highScore, 20, canvas.height - 80, 'black');
+  
+  if (playerHighScored)
+  {
+    //var textSize = getTextSize(context, 'High Score!');
+    // getTextSize returns 125
+    drawRect(context, canvas.width / 2 - 5, canvas.height - 90, 135, 40, 'blue');
+    fillText(context, 'High Score!', canvas.width / 2, canvas.height - 80, 'blue');
+  }
+  else if (playerScored)
+  {
+    fillText(context, 'Score!', canvas.width / 2, canvas.height - 80, 'black');
+  }
   
   numButtons = 0;
   drawImageButton(numButtons, ICON_ID_PLUS, inputMode == INPUT_MODE_CURVE);
@@ -308,10 +351,10 @@ function pageLoaded()
 {
   while (curvePoints.length < NUM_CURVE_POINTS)
   {
-    curvePoints.push(new Box2D.b2Vec2(0.0, 0.0));
+    curvePoints.push(new b2Vec2(0.0, 0.0));
   }
   
-  canvas = document.getElementsByTagName('canvas')[0]
+  canvas = document.getElementsByTagName('canvas')[0];
   context = canvas.getContext('2d');
   
   window.addEventListener('resize', windowResized, false);
@@ -332,6 +375,8 @@ function pageLoaded()
   canvas.addEventListener('mouseup', canvasMouseUp, false);
   canvas.addEventListener('mousemove', canvasMouseMove, false);
   
+  createB2World();
+  
   windowResized();
 }
 
@@ -343,6 +388,7 @@ function windowResized()
   canvas.height = window.innerHeight * 0.95 - instructionsLabel.offsetHeight;
   
   repositionBasket();
+  createB2Ground();
   
   draw();
 }
@@ -450,18 +496,22 @@ function processMouseDown(x, y)
           point1X = control1X = x;
           point1Y = control1Y = y;
           ++numInputs;
-          break;
+          return false;
         }
         case 1:
         {
           point2X = control2X = x;
           point2Y = control2Y = y;
           numInputs = 0;
-          break;
+          getCurvePoints(curvePoints, point1X, point1Y, control1X, control1Y, point2X, point2Y, control2X, control2Y);
+          createB2Curve();
+          return true;
+        }
+        default:
+        {
+          return false;
         }
       }
-      getCurvePoints(curvePoints, point1X, point1Y, control1X, control1Y, point2X, point2Y, control2X, control2Y);
-      return true;
     }
     case INPUT_MODE_CONTROL:
     {
@@ -481,8 +531,15 @@ function processMouseDown(x, y)
     {
       if (!isPointInBasketArea(x, y))
       {
-        dropBall(x, y);
-        animate();
+        score = 0;
+        playerScored = false;
+        playerHighScored = false;
+        createB2Ball(x, y);
+        if (!animating)
+        {
+          animating = true;
+          animate();
+        }
         return true;
       }
       return false;
@@ -508,6 +565,7 @@ function processMouseMove(x, y)
         control1X = x;
         control1Y = y;
         getCurvePoints(curvePoints, point1X, point1Y, control1X, control1Y, point2X, point2Y, control2X, control2Y);
+        createB2Curve();
         return true;
       }
       case CONTROL_ID_2:
@@ -515,6 +573,7 @@ function processMouseMove(x, y)
         control2X = x;
         control2Y = y;
         getCurvePoints(curvePoints, point1X, point1Y, control1X, control1Y, point2X, point2Y, control2X, control2Y);
+        createB2Curve();
         return true;
       }
       default:
@@ -534,127 +593,191 @@ function repositionBasket()
   {
     basketY = Math.floor(Math.random() * (canvas.height - BASKET_SIZE - ICON_SIZE)) + ICON_SIZE;
   }
+  createB2Basket();
 }
 
 // Animation
 
 function animate()
 {
-  if (inputMode == INPUT_MODE_PLAY && !(ball.GetLinearVelocity().get_y() == 0 && ball.GetLinearVelocity().get_x() == 0))
+  if (inputMode == INPUT_MODE_PLAY && animating)
   {
     requestAnimFrame(animate);
   }
-  world.Step(1/60, 3, 2);
-  //world.DrawDebugData();
+  else
+  {
+    score = 0;
+    animating = false;
+  }
+  
+  // Increase the speed of the simulation
+  for (var i = 0; i < 4; ++i)
+  {
+    world.Step(1 / 60, 10, 10);
+    world.ClearForces();
+  }
+  
+  if (ball.GetPosition().y >= -(basketY - ICON_SIZE / 2))
+  {
+    score += 100;
+  }
+  
+  if (ball.GetLinearVelocity().y == 0 && ball.GetLinearVelocity().x == 0)
+  {
+    score = 0;
+    animating = false;
+  }
+  
   draw();
 }
 
 // Box2D physics
 
-function dropBall(x, y)
+function createB2World()
 {
-  if (world)
+  world = new b2World(new b2Vec2(0.0, -10.0), true);
+  
+  var contactListener = new b2ContactListener();
+  contactListener.BeginContact = function (contact)
   {
-    Box2D.destroy(world);
+    if (contact.GetFixtureA().GetBody().GetUserData() == 'ground'
+    || contact.GetFixtureB().GetBody().GetUserData() == 'ground')
+    {
+      score = 0;
+    }
+    else if (contact.GetFixtureA().GetBody().GetUserData() == 'basket'
+    || contact.GetFixtureB().GetBody().GetUserData() == 'basket')
+    {
+      playerScored = true;
+      if (score > highScore)
+      {
+        playerHighScored = true;
+        highScore = score;
+      }
+    }
   }
-  world = new Box2D.b2World(new Box2D.b2Vec2(0.0, -40.0));
-  
-  //var debugDraw = getCanvasDebugDraw();
-  //debugDraw.SetFlags(0x0001);
-  //world.SetDebugDraw(debugDraw);
-  
-  var ballDef = new Box2D.b2BodyDef();
-  ballDef.set_type(Module.b2_dynamicBody);
-  ballDef.set_position(new Box2D.b2Vec2(0, 0));
-  
-  var ballShape = new Box2D.b2CircleShape();
-  ballShape.set_m_radius(BALL_RADIUS);
-  
-  ball = world.CreateBody(ballDef);
-  ball.CreateFixture(ballShape, 1.0);
-  ball.SetTransform(new Box2D.b2Vec2(x, -y), 0.0);
-  ball.SetLinearVelocity(new Box2D.b2Vec2(0, BALL_DROP_SPEED));
-  ball.SetAwake(1);
-  ball.SetActive(1);
-  
-  var groundDef = new Box2D.b2BodyDef();
-  var ground = world.CreateBody(groundDef);
-  
-  var groundShape = new Box2D.b2EdgeShape();
-  var groundFixtureDef = new Box2D.b2FixtureDef();
-  groundFixtureDef.set_restitution(0.0);
-  groundFixtureDef.set_shape(groundShape);
-  
-  groundShape.Set(new Box2D.b2Vec2(0.0, -canvas.height), new Box2D.b2Vec2(canvas.width, -canvas.height));
-  ground.CreateFixture(groundFixtureDef);
-  groundShape.Set(new Box2D.b2Vec2(0.0, 0.0), new Box2D.b2Vec2(0.0, -canvas.height));
-  ground.CreateFixture(groundFixtureDef);
-  groundShape.Set(new Box2D.b2Vec2(canvas.width, 0.0), new Box2D.b2Vec2(canvas.width, -canvas.height));
-  ground.CreateFixture(groundFixtureDef);
-  
-  for (var i = 0; i < curvePoints.length - 1; ++i)
-  {
-    groundShape.Set(curvePoints[i], curvePoints[i + 1]);
-    ground.CreateFixture(groundFixtureDef);
-  }
-  
-  var basketDef = new Box2D.b2BodyDef();
-  var basket = world.CreateBody(basketDef);
-  
-  var basketShape = new Box2D.b2EdgeShape();
-  var basketFixtureDef = new Box2D.b2FixtureDef();
-  basketFixtureDef.set_restitution(0.5);
-  basketFixtureDef.set_shape(basketShape);
-  
-  // Adjusting values to match the image
-  var basketPoint2 = new Box2D.b2Vec2(basketX + 18, -(basketY + BASKET_SIZE - 5));
-  var basketPoint3 = new Box2D.b2Vec2(basketX + BASKET_SIZE - 18, -(basketY + BASKET_SIZE - 5));
-  basketShape.Set(new Box2D.b2Vec2(basketX, -basketY), basketPoint2);
-  basket.CreateFixture(basketFixtureDef);
-  basketShape.Set(basketPoint2, basketPoint3);
-  basket.CreateFixture(basketFixtureDef);
-  basketShape.Set(basketPoint3, new Box2D.b2Vec2(basketX + BASKET_SIZE, -basketY));
-  basket.CreateFixture(basketFixtureDef);
+  world.SetContactListener(contactListener);
 }
 
-function getCanvasDebugDraw()
+function createB2Ground()
 {
-  var debugDraw = new Box2D.JSDraw();
-  
-  debugDraw.DrawSegment = function(vert1, vert2, color)
+  if (ground)
   {
-    var vert1V = Box2D.wrapPointer(vert1, Box2D.b2Vec2);
-    var vert2V = Box2D.wrapPointer(vert2, Box2D.b2Vec2);
-    drawLine(context, vert1V.get_x(), -vert1V.get_y(), vert2V.get_x(), -vert2V.get_y(), 'green', 1);
-  };
+    world.DestroyBody(ground);
+  }
   
-  debugDraw.DrawPolygon = function(vertices, vertexCount, color)
+  var bodyDef = new b2BodyDef();
+  bodyDef.type = b2Body.b2_staticBody;
+  bodyDef.userData = 'ground';
+  ground = world.CreateBody(bodyDef);
+  
+  var fixDef = new b2FixtureDef();
+  fixDef.friction = 0.5;
+  fixDef.restitution = 0.5;
+  fixDef.filter.categoryBits = CATEGORY_PHYSICS_ENTITIES;
+  fixDef.shape = new b2PolygonShape();
+  var vertices = [
+    new b2Vec2(0.0, 0.0),
+    new b2Vec2(0.0, -canvas.height - 1),
+    new b2Vec2(canvas.width, -canvas.height - 1),
+    new b2Vec2(canvas.width, 0.0)
+  ];
+  for (var i = 0; i < vertices.length - 1; ++i)
   {
-    alert('Box2D drawing polygon!');
-  };
-  
-  debugDraw.DrawSolidPolygon = function(vertices, vertexCount, color)
+    fixDef.shape.SetAsEdge(vertices[i], vertices[i + 1]);
+    ground.CreateFixture(fixDef);
+  }
+}
+
+function createB2Ball(x, y)
+{
+  if (ball)
   {
-    alert('Box2D drawing solid polygon!');
-  };
+    world.DestroyBody(ball);
+  }
   
-  debugDraw.DrawCircle = function(center, radius, color)
+  var bodyDef = new b2BodyDef();
+  bodyDef.position.Set(x, -y);
+  bodyDef.angularDamping = 0.1;
+  bodyDef.type = b2Body.b2_dynamicBody;
+  ball = world.CreateBody(bodyDef);
+  
+  var fixDef = new b2FixtureDef();
+  fixDef.density = 1.0;
+  fixDef.friction = 0.5;
+  fixDef.restitution = 0.5;
+  fixDef.filter.categoryBits = CATEGORY_PHYSICS_ENTITIES;
+  fixDef.shape = new b2CircleShape(BALL_RADIUS);
+  ball.CreateFixture(fixDef);
+}
+
+function createB2Basket()
+{
+  if (basket)
   {
-    var centerV = Box2D.wrapPointer(center, Box2D.b2Vec2);
-    drawCircle(context, centerV.get_x(), -centerV.get_y(), radius, 1);
-  };
+    world.DestroyBody(basket);
+  }
   
-  debugDraw.DrawSolidCircle = function(center, radius, axis, color)
+  var bodyDef = new b2BodyDef();
+  bodyDef.type = b2Body.b2_staticBody;
+  basket = world.CreateBody(bodyDef);
+  
+  var fixDef = new b2FixtureDef();
+  fixDef.restitution = 0.5;
+  fixDef.filter.categoryBits = CATEGORY_PHYSICS_ENTITIES;
+  fixDef.shape = new b2PolygonShape();
+  var vertices = [
+    // Adjusting values to match the image
+    new b2Vec2(basketX, -basketY),
+    new b2Vec2(basketX + 18, -(basketY + BASKET_SIZE - 5)),
+    new b2Vec2(basketX + BASKET_SIZE - 18, -(basketY + BASKET_SIZE - 5)),
+    new b2Vec2(basketX + BASKET_SIZE, -basketY)
+  ];
+  for (var i = 0; i < vertices.length - 1; ++i)
   {
-    var centerV = Box2D.wrapPointer(center, Box2D.b2Vec2);
-    fillCircle(context, centerV.get_x(), -centerV.get_y(), radius);
-  };
+    fixDef.shape.SetAsEdge(vertices[i], vertices[i + 1]);
+    basket.CreateFixture(fixDef);
+  }
   
-  debugDraw.DrawTransform = function(transform)
+  // Basket Sensor
+  
+  if (basketSensor)
   {
-    alert('Box2D drawing transform!');
-  };
+    world.DestroyBody(basketSensor);
+  }
   
-  return debugDraw;
+  bodyDef.userData = 'basket';
+  basketSensor = world.CreateBody(bodyDef);
+  
+  fixDef.shape = new b2CircleShape(1);
+  fixDef.shape.SetLocalPosition(new b2Vec2(basketX + BASKET_SIZE / 2, -(basketY + BASKET_SIZE / 2)));
+  fixDef.isSensor = true;
+  fixDef.filter.categoryBits = CATEGORY_LOGIC_ENTITIES;
+  basketSensor.CreateFixture(fixDef);
+}
+
+function createB2Curve()
+{
+  if (!(point1X == point2X && point1Y == point2Y))
+  {
+    if (curve)
+    {
+      world.DestroyBody(curve);
+    }
+    
+    var bodyDef = new b2BodyDef();
+    bodyDef.type = b2Body.b2_staticBody;
+    curve = world.CreateBody(bodyDef);
+    
+    var fixDef = new b2FixtureDef();
+    fixDef.friction = 0.5;
+    fixDef.filter.categoryBits = CATEGORY_PHYSICS_ENTITIES;
+    fixDef.shape = new b2PolygonShape();
+    for (var i = 0; i < curvePoints.length - 1; ++i)
+    {
+      fixDef.shape.SetAsEdge(curvePoints[i], curvePoints[i + 1]);
+      curve.CreateFixture(fixDef);
+    }
+  }
 }
 

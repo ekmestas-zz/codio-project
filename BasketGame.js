@@ -324,9 +324,8 @@ function draw()
   
   if (playerHighScored)
   {
-    //var textSize = getTextSize(context, 'High Score!');
-    // getTextSize returns 125
-    drawRect(context, canvas.width / 2 - 5, canvas.height - 90, 135, 40, 'blue');
+    var textSize = getTextSize(context, 'High Score!');
+    drawRect(context, canvas.width / 2 - 5, canvas.height - 90, textSize.width + 10, 40, 'blue');
     fillText(context, 'High Score!', canvas.width / 2, canvas.height - 80, 'blue');
   }
   else if (playerScored)
